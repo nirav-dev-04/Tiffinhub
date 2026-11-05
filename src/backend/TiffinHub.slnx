@@ -1,0 +1,7 @@
+<Solution>
+  <Project Path="../../tests/TiffinHub.Tests/TiffinHub.Tests.csproj" />
+  <Project Path="TiffinHub.Api/TiffinHub.Api.csproj" />
+  <Project Path="TiffinHub.Application/TiffinHub.Application.csproj" />
+  <Project Path="TiffinHub.Domain/TiffinHub.Domain.csproj" />
+  <Project Path="TiffinHub.Infrastructure/TiffinHub.Infrastructure.csproj" />
+</Solution>

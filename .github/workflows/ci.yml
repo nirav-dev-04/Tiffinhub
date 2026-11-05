@@ -1,0 +1,54 @@
+name: TiffinHub CI
+
+on:
+  push:
+    branches: [ "main", "master" ]
+  pull_request:
+    branches: [ "main", "master" ]
+
+jobs:
+  backend-test:
+    name: Backend Build & Tests
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v4
+
+      - name: Setup .NET SDK
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '10.0.x'
+
+      - name: Restore Dependencies
+        run: dotnet restore src/backend/TiffinHub.slnx
+
+      - name: Build Backend (Release)
+        run: dotnet build src/backend/TiffinHub.slnx --no-restore -c Release
+
+      - name: Run xUnit Unit & TimeZone Tests
+        run: dotnet test tests/TiffinHub.Tests/TiffinHub.Tests.csproj --no-build -c Release --verbosity normal
+
+  frontend-build:
+    name: Frontend Lint & Build
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          version: 10
+
+      - name: Install Frontend Dependencies
+        working-directory: ./src/frontend
+        run: pnpm install --frozen-lockfile
+
+      - name: Build Frontend Shell
+        working-directory: ./src/frontend
+        run: pnpm build
