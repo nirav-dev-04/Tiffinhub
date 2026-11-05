@@ -1,7 +1,11 @@
+using Microsoft.AspNetCore.Identity;
 using Serilog;
 using TiffinHub.Api.Middleware;
 using TiffinHub.Application.Common.Interfaces;
+using TiffinHub.Domain.Constants;
+using TiffinHub.Domain.Entities;
 using TiffinHub.Infrastructure;
+using TiffinHub.Infrastructure.Persistence;
 
 var builder = WebApplication.CreateBuilder(args);
 
@@ -40,7 +44,7 @@ builder.Services.AddCors(options =>
     options.AddPolicy("DefaultCorsPolicy", policy =>
     {
         var origins = builder.Configuration.GetSection("Cors:AllowedOrigins").Get<string[]>()
-            ?? new[] { "http://localhost:5173", "https://localhost:5173" };
+            ?? new[] { "http://localhost:5173", "https://localhost:5173", "https://tiffinhub-app.vercel.app" };
 
         policy.WithOrigins(origins)
               .AllowAnyHeader()
@@ -51,7 +55,34 @@ builder.Services.AddCors(options =>
 
 var app = builder.Build();
 
-// 3. Configure HTTP Pipeline
+// 3. Database Automatic Schema Initialization & Role Seeding
+using (var scope = app.Services.CreateScope())
+{
+    var services = scope.ServiceProvider;
+    try
+    {
+        var context = services.GetRequiredService<ApplicationDbContext>();
+        context.Database.EnsureCreated();
+
+        // Seed Roles
+        var roleManager = services.GetRequiredService<RoleManager<IdentityRole<Guid>>>();
+        foreach (var roleName in Roles.All)
+        {
+            if (!await roleManager.RoleExistsAsync(roleName))
+            {
+                await roleManager.CreateAsync(new IdentityRole<Guid>(roleName));
+            }
+        }
+
+        Log.Information("Database schema verified and default roles initialized successfully.");
+    }
+    catch (Exception ex)
+    {
+        Log.Warning(ex, "Could not initialize database on startup (Check PostgreSQL connection string).");
+    }
+}
+
+// 4. Configure HTTP Pipeline
 app.UseExceptionHandler();
 
 if (app.Environment.IsDevelopment() || app.Environment.IsProduction())

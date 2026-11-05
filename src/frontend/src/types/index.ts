@@ -1,14 +1,31 @@
 export type Role = 'Admin' | 'Vendor' | 'Customer' | 'DeliveryPartner';
 
-export interface User {
+export interface UserSummary {
   id: string;
-  email: string;
   name: string;
+  email: string;
   phone?: string;
-  photoUrl?: string;
   role: Role;
-  isActive: boolean;
-  createdAtUtc: string;
+}
+
+export interface AuthResponse {
+  accessToken: string;
+  refreshToken: string;
+  expiresInMinutes: number;
+  user: UserSummary;
+}
+
+export interface RegisterPayload {
+  name: string;
+  email: string;
+  password: string;
+  phone?: string;
+  role: Role;
+}
+
+export interface LoginPayload {
+  email: string;
+  password: string;
 }
 
 export interface HealthStatus {
