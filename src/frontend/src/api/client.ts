@@ -48,6 +48,24 @@ export async function refreshTokenApi(refreshToken: string): Promise<AuthRespons
   return handleResponse<AuthResponse>(response);
 }
 
+export async function forgotPasswordApi(email: string): Promise<{ success: boolean; message: string; demoResetToken?: string }> {
+  const response = await fetch(`${API_BASE_URL}/api/auth/forgot-password`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ email }),
+  });
+  return handleResponse(response);
+}
+
+export async function resetPasswordApi(payload: { email: string; token: string; newPassword: string }): Promise<{ success: boolean; message: string }> {
+  const response = await fetch(`${API_BASE_URL}/api/auth/reset-password`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(payload),
+  });
+  return handleResponse(response);
+}
+
 export async function getCurrentUserApi(token: string): Promise<UserSummary> {
   const response = await fetch(`${API_BASE_URL}/api/auth/me`, {
     headers: {

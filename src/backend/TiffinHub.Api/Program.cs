@@ -1,4 +1,6 @@
+using System.Threading.RateLimiting;
 using Microsoft.AspNetCore.Identity;
+using Microsoft.AspNetCore.RateLimiting;
 using Serilog;
 using TiffinHub.Api.Middleware;
 using TiffinHub.Application.Common.Interfaces;
@@ -24,6 +26,23 @@ builder.Services.AddInfrastructureServices(builder.Configuration);
 // Exception Handling & Problem Details
 builder.Services.AddExceptionHandler<GlobalExceptionHandler>();
 builder.Services.AddProblemDetails();
+
+// Rate Limiting (Brute-force protection: max 10 requests per minute per IP)
+builder.Services.AddRateLimiter(options =>
+{
+    options.RejectionStatusCode = StatusCodes.Status429TooManyRequests;
+    options.AddPolicy("auth-rate-limit", httpContext =>
+    {
+        var clientIp = httpContext.Connection.RemoteIpAddress?.ToString() ?? "unknown-client";
+        return RateLimitPartition.GetFixedWindowLimiter(clientIp, _ => new FixedWindowRateLimiterOptions
+        {
+            PermitLimit = 10,
+            Window = TimeSpan.FromMinutes(1),
+            QueueProcessingOrder = QueueProcessingOrder.OldestFirst,
+            QueueLimit = 0
+        });
+    });
+});
 
 // Controllers & Endpoints
 builder.Services.AddControllers();
@@ -55,7 +74,7 @@ builder.Services.AddCors(options =>
 
 var app = builder.Build();
 
-// 3. Database Automatic Schema Initialization & Role Seeding
+// 3. Database Schema Verification, Role & Demo User Seeding
 using (var scope = app.Services.CreateScope())
 {
     var services = scope.ServiceProvider;
@@ -64,8 +83,10 @@ using (var scope = app.Services.CreateScope())
         var context = services.GetRequiredService<ApplicationDbContext>();
         context.Database.EnsureCreated();
 
-        // Seed Roles
         var roleManager = services.GetRequiredService<RoleManager<IdentityRole<Guid>>>();
+        var userManager = services.GetRequiredService<UserManager<User>>();
+
+        // Seed Default Roles
         foreach (var roleName in Roles.All)
         {
             if (!await roleManager.RoleExistsAsync(roleName))
@@ -74,7 +95,40 @@ using (var scope = app.Services.CreateScope())
             }
         }
 
-        Log.Information("Database schema verified and default roles initialized successfully.");
+        // Seed 4 Role Demo Accounts for Instant Testing & Evaluation
+        var demoUsers = new[]
+        {
+            (Email: "admin@tiffinhub.com", Name: "Platform Owner", Pass: "Admin@123", Role: Roles.Admin, Phone: "+919900011000"),
+            (Email: "vendor@tiffinhub.com", Name: "Anand Kitchen", Pass: "Pass@123", Role: Roles.Vendor, Phone: "+919876500001"),
+            (Email: "customer@tiffinhub.com", Name: "Rahul Sharma", Pass: "Pass@123", Role: Roles.Customer, Phone: "+919876500002"),
+            (Email: "rider@tiffinhub.com", Name: "Vikram Rider", Pass: "Pass@123", Role: Roles.DeliveryPartner, Phone: "+919876500003")
+        };
+
+        foreach (var (email, name, pass, role, phone) in demoUsers)
+        {
+            var existing = await userManager.FindByEmailAsync(email);
+            if (existing == null)
+            {
+                var newUser = new User
+                {
+                    UserName = email,
+                    Email = email,
+                    Name = name,
+                    Phone = phone,
+                    IsActive = true,
+                    CreatedAtUtc = DateTime.UtcNow
+                };
+
+                var createRes = await userManager.CreateAsync(newUser, pass);
+                if (createRes.Succeeded)
+                {
+                    await userManager.AddToRoleAsync(newUser, role);
+                    Log.Information("Seeded demo user: {Email} ({Role})", email, role);
+                }
+            }
+        }
+
+        Log.Information("Database schema verified and default roles + demo accounts initialized successfully.");
     }
     catch (Exception ex)
     {
@@ -97,6 +151,7 @@ if (app.Environment.IsDevelopment() || app.Environment.IsProduction())
 
 app.UseSerilogRequestLogging();
 app.UseCors("DefaultCorsPolicy");
+app.UseRateLimiter();
 
 app.UseAuthentication();
 app.UseAuthorization();

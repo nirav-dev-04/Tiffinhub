@@ -2,6 +2,7 @@ using System.Security.Claims;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Identity;
 using Microsoft.AspNetCore.Mvc;
+using Microsoft.AspNetCore.RateLimiting;
 using Microsoft.EntityFrameworkCore;
 using TiffinHub.Application.Common.Interfaces;
 using TiffinHub.Application.DTOs.Auth;
@@ -12,6 +13,7 @@ namespace TiffinHub.Api.Controllers;
 
 [ApiController]
 [Route("api/[controller]")]
+[EnableRateLimiting("auth-rate-limit")]
 public class AuthController : ControllerBase
 {
     private readonly UserManager<User> _userManager;
@@ -253,6 +255,83 @@ public class AuthController : ControllerBase
             RefreshToken: newRawRefreshToken,
             ExpiresInMinutes: 15,
             User: new UserSummaryDto(user.Id, user.Name, user.Email!, user.Phone, primaryRole)
+        ));
+    }
+
+    /// <summary>
+    /// Generates a secure password reset token for account recovery.
+    /// </summary>
+    [HttpPost("forgot-password")]
+    [ProducesResponseType(typeof(PasswordResetResult), StatusCodes.Status200OK)]
+    public async Task<IActionResult> ForgotPassword([FromBody] ForgotPasswordRequest request)
+    {
+        var user = await _userManager.FindByEmailAsync(request.Email);
+        if (user == null || !user.IsActive)
+        {
+            // Do not disclose whether email exists (security best practice)
+            return Ok(new PasswordResetResult(
+                Success: true,
+                Message: "If your email is registered, you will receive password reset instructions."
+            ));
+        }
+
+        var token = await _userManager.GeneratePasswordResetTokenAsync(user);
+        _logger.LogInformation("Password reset requested for {Email}", user.Email);
+
+        return Ok(new PasswordResetResult(
+            Success: true,
+            Message: "Password reset token generated successfully.",
+            DemoResetToken: token // Returned for demo convenience
+        ));
+    }
+
+    /// <summary>
+    /// Resets a user password using a verified Identity reset token.
+    /// </summary>
+    [HttpPost("reset-password")]
+    [ProducesResponseType(typeof(PasswordResetResult), StatusCodes.Status200OK)]
+    [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status400BadRequest)]
+    public async Task<IActionResult> ResetPassword([FromBody] ResetPasswordRequest request)
+    {
+        var user = await _userManager.FindByEmailAsync(request.Email);
+        if (user == null)
+        {
+            return BadRequest(new ProblemDetails
+            {
+                Title = "Reset Failed",
+                Detail = "Invalid password reset request.",
+                Status = StatusCodes.Status400BadRequest
+            });
+        }
+
+        var result = await _userManager.ResetPasswordAsync(user, request.Token, request.NewPassword);
+        if (!result.Succeeded)
+        {
+            var errors = string.Join("; ", result.Errors.Select(e => e.Description));
+            return BadRequest(new ProblemDetails
+            {
+                Title = "Reset Failed",
+                Detail = errors,
+                Status = StatusCodes.Status400BadRequest
+            });
+        }
+
+        // Revoke all existing refresh tokens for security upon password change
+        var existingTokens = await _context.RefreshTokens
+            .Where(r => r.UserId == user.Id && !r.IsRevoked)
+            .ToListAsync();
+
+        foreach (var t in existingTokens)
+        {
+            t.IsRevoked = true;
+        }
+
+        await _context.SaveChangesAsync();
+        _logger.LogInformation("Password successfully reset for {Email}. All prior sessions revoked.", user.Email);
+
+        return Ok(new PasswordResetResult(
+            Success: true,
+            Message: "Your password has been reset successfully. Please log in with your new password."
         ));
     }
 
