@@ -1,3 +1,4 @@
+using Microsoft.AspNetCore.DataProtection;
 using Microsoft.AspNetCore.Identity;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Configuration;
@@ -28,6 +29,12 @@ public static class DependencyInjection
         });
 
         services.AddScoped<IApplicationDbContext>(sp => sp.GetRequiredService<ApplicationDbContext>());
+
+        // Data Protection for Identity Token Providers (persist keys in app directory)
+        var keysFolder = Path.Combine(AppContext.BaseDirectory, "DataProtection-Keys");
+        Directory.CreateDirectory(keysFolder);
+        services.AddDataProtection()
+            .PersistKeysToFileSystem(new DirectoryInfo(keysFolder));
 
         // ASP.NET Core Identity Core
         services.AddIdentityCore<User>(options =>
